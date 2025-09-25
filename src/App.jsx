@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 // 日本の主要企業データ
 const STOCKS = [
@@ -19,10 +19,63 @@ const STOCKS = [
   { code: '9984', name: 'ソフトバンクG', market: 'PRIME', basePrice: 7500 }
 ]
 
+// 表示期間オプション
+const PERIOD_OPTIONS = [
+  { value: '6M', label: '6ヶ月', days: 130 },
+  { value: '1Y', label: '1年', days: 250 },
+  { value: '3Y', label: '3年', days: 750 },
+  { value: '5Y', label: '5年', days: 1250 },
+  { value: '10Y', label: '10年', days: 2500 }
+]
+
+// 時間軸オプション
+const TIMEFRAME_OPTIONS = [
+  { value: 'daily', label: '日足' },
+  { value: 'weekly', label: '週足' },
+  { value: 'monthly', label: '月足' }
+]
+
+// カスタムローソク足コンポーネント
+const CandlestickBar = ({ payload, x, y, width, height }) => {
+  if (!payload) return null
+  
+  const { open, high, low, close } = payload
+  const isPositive = close >= open
+  const color = isPositive ? '#22c55e' : '#ef4444'
+  const bodyHeight = Math.abs(close - open)
+  const bodyY = Math.min(close, open)
+  
+  return (
+    <g>
+      {/* 高値-安値の線 */}
+      <line
+        x1={x + width / 2}
+        y1={high}
+        x2={x + width / 2}
+        y2={low}
+        stroke={color}
+        strokeWidth={1}
+      />
+      {/* ローソク足の実体 */}
+      <rect
+        x={x + width * 0.2}
+        y={bodyY}
+        width={width * 0.6}
+        height={Math.max(bodyHeight, 1)}
+        fill={isPositive ? color : color}
+        stroke={color}
+        strokeWidth={1}
+      />
+    </g>
+  )
+}
+
 function App() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [stocksData, setStocksData] = useState([])
+  const [selectedPeriod, setSelectedPeriod] = useState('1Y')
+  const [selectedTimeframe, setSelectedTimeframe] = useState('daily')
 
   // 株価データを生成
   const generateStockData = (stock) => {
@@ -38,19 +91,67 @@ function App() {
     }
   }
 
-  // チャートデータを生成
-  const generateChartData = (basePrice) => {
-    const data = []
-    let price = basePrice
+  // 高度なチャートデータを生成
+  const generateAdvancedChartData = (basePrice, period, timeframe) => {
+    const periodConfig = PERIOD_OPTIONS.find(p => p.value === period)
+    let dataPoints = periodConfig.days
     
-    for (let i = 0; i < 5; i++) {
-      const change = (Math.random() - 0.5) * basePrice * 0.02
-      price = Math.max(price + change, basePrice * 0.9)
+    // 時間軸に応じてデータポイント数を調整
+    if (timeframe === 'weekly') {
+      dataPoints = Math.floor(dataPoints / 5)
+    } else if (timeframe === 'monthly') {
+      dataPoints = Math.floor(dataPoints / 22)
+    }
+    
+    const data = []
+    let currentPrice = basePrice
+    let currentDate = new Date()
+    currentDate.setDate(currentDate.getDate() - dataPoints)
+    
+    for (let i = 0; i < dataPoints; i++) {
+      // トレンドとランダムウォークを組み合わせ
+      const trend = Math.sin(i / dataPoints * Math.PI * 2) * 0.001
+      const randomWalk = (Math.random() - 0.5) * 0.02
+      const priceChange = (trend + randomWalk) * basePrice
+      
+      currentPrice = Math.max(currentPrice + priceChange, basePrice * 0.3)
+      
+      // ローソク足データを生成
+      const dayVariation = currentPrice * 0.02
+      const open = currentPrice + (Math.random() - 0.5) * dayVariation
+      const close = currentPrice + (Math.random() - 0.5) * dayVariation
+      const high = Math.max(open, close) + Math.random() * dayVariation * 0.5
+      const low = Math.min(open, close) - Math.random() * dayVariation * 0.5
+      const volume = Math.floor(Math.random() * 1000000 + 100000)
+      
+      // 日付フォーマット
+      let dateLabel
+      if (timeframe === 'monthly') {
+        dateLabel = `${currentDate.getFullYear()}/${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+      } else if (timeframe === 'weekly') {
+        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
+      } else {
+        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
+      }
       
       data.push({
-        date: `9/${20 + i}`,
-        price: Math.round(price)
+        date: dateLabel,
+        open: Math.round(open),
+        high: Math.round(high),
+        low: Math.round(low),
+        close: Math.round(close),
+        volume: volume,
+        priceForLine: Math.round(close) // ライン表示用
       })
+      
+      // 次の日付
+      if (timeframe === 'monthly') {
+        currentDate.setMonth(currentDate.getMonth() + 1)
+      } else if (timeframe === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + 7)
+      } else {
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
     }
     
     return data
@@ -64,7 +165,7 @@ function App() {
 
   // 現在の銘柄
   const currentStock = stocksData[currentIndex]
-  const chartData = currentStock ? generateChartData(currentStock.basePrice) : []
+  const chartData = currentStock ? generateAdvancedChartData(currentStock.basePrice, selectedPeriod, selectedTimeframe) : []
 
   // 次の銘柄
   const goToNext = () => {
@@ -87,7 +188,7 @@ function App() {
 
     const interval = setInterval(() => {
       goToNext()
-    }, 2000) // 2秒間隔
+    }, 3000) // 3秒間隔に変更（チャートが複雑になったため）
 
     return () => clearInterval(interval)
   }, [isPlaying, stocksData.length])
@@ -126,7 +227,7 @@ function App() {
       padding: '20px',
       fontFamily: 'Arial, sans-serif'
     }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         {/* ヘッダー */}
         <div style={{ marginBottom: '30px', textAlign: 'center' }}>
           <h1 style={{ 
@@ -135,10 +236,10 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v2.0
+            日本株チャート巡回ツール v2.0 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            TSE主要銘柄対応 - 自動ローテーション機能付き
+            TSE主要銘柄対応 - プロレベル株価チャート分析
           </p>
           <div style={{ marginTop: '10px' }}>
             <span style={{ 
@@ -200,6 +301,61 @@ function App() {
           </div>
         </div>
 
+        {/* チャート設定 */}
+        <div style={{ 
+          backgroundColor: 'white', 
+          padding: '20px', 
+          borderRadius: '10px', 
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+            <div>
+              <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>表示期間:</label>
+              {PERIOD_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedPeriod(option.value)}
+                  style={{
+                    padding: '5px 12px',
+                    margin: '0 3px',
+                    border: selectedPeriod === option.value ? '2px solid #2563eb' : '1px solid #d1d5db',
+                    borderRadius: '5px',
+                    backgroundColor: selectedPeriod === option.value ? '#eff6ff' : 'white',
+                    color: selectedPeriod === option.value ? '#2563eb' : '#374151',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            
+            <div>
+              <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>時間軸:</label>
+              {TIMEFRAME_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedTimeframe(option.value)}
+                  style={{
+                    padding: '5px 12px',
+                    margin: '0 3px',
+                    border: selectedTimeframe === option.value ? '2px solid #059669' : '1px solid #d1d5db',
+                    borderRadius: '5px',
+                    backgroundColor: selectedTimeframe === option.value ? '#f0fdf4' : 'white',
+                    color: selectedTimeframe === option.value ? '#059669' : '#374151',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* チャート */}
         <div style={{ 
           backgroundColor: 'white', 
@@ -209,25 +365,72 @@ function App() {
           marginBottom: '30px'
         }}>
           <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>
-            📈 株価チャート (5日間)
+            📈 株価チャート ({PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label} - {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label})
           </h3>
-          <div style={{ height: '300px' }}>
+          
+          {/* 株価チャート */}
+          <div style={{ height: '400px', marginBottom: '20px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fontSize: 12 }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis 
+                  yAxisId="price"
+                  tick={{ fontSize: 12 }}
+                  domain={['dataMin - 50', 'dataMax + 50']}
+                />
                 <Tooltip 
-                  formatter={(value) => [`¥${value.toLocaleString()}`, '株価']}
+                  formatter={(value, name) => {
+                    if (name === 'priceForLine') return [`¥${value.toLocaleString()}`, '終値']
+                    return [`¥${value.toLocaleString()}`, name]
+                  }}
+                  labelFormatter={(label) => `日付: ${label}`}
+                  contentStyle={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    border: '1px solid #ccc',
+                    borderRadius: '5px'
+                  }}
                 />
                 <Line 
+                  yAxisId="price"
                   type="monotone" 
-                  dataKey="price" 
+                  dataKey="priceForLine" 
                   stroke="#2563eb" 
-                  strokeWidth={3}
-                  dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
                 />
-              </LineChart>
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 出来高チャート */}
+          <div style={{ height: '150px' }}>
+            <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+              📊 出来高
+            </h4>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fontSize: 10 }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis 
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(value) => `${Math.round(value / 1000)}K`}
+                />
+                <Tooltip 
+                  formatter={(value) => [`${value.toLocaleString()}株`, '出来高']}
+                  labelFormatter={(label) => `日付: ${label}`}
+                />
+                <Bar dataKey="volume" fill="#94a3b8" />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -261,7 +464,7 @@ function App() {
                 borderRadius: '5px',
                 fontSize: '12px'
               }}>
-                🔄 自動巡回中
+                🔄 自動巡回中 (3秒間隔)
               </span>
             )}
           </div>
@@ -270,13 +473,14 @@ function App() {
             <button
               onClick={goToPrevious}
               style={{
-                padding: '10px 20px',
+                padding: '12px 24px',
                 margin: '0 10px',
                 border: '2px solid #d1d5db',
                 borderRadius: '8px',
                 backgroundColor: 'white',
                 cursor: 'pointer',
-                fontSize: '16px'
+                fontSize: '16px',
+                fontWeight: '600'
               }}
             >
               ⏮️ 前の銘柄
@@ -285,7 +489,7 @@ function App() {
             <button
               onClick={togglePlayback}
               style={{
-                padding: '10px 20px',
+                padding: '12px 24px',
                 margin: '0 10px',
                 border: 'none',
                 borderRadius: '8px',
@@ -302,13 +506,14 @@ function App() {
             <button
               onClick={goToNext}
               style={{
-                padding: '10px 20px',
+                padding: '12px 24px',
                 margin: '0 10px',
                 border: '2px solid #d1d5db',
                 borderRadius: '8px',
                 backgroundColor: 'white',
                 cursor: 'pointer',
-                fontSize: '16px'
+                fontSize: '16px',
+                fontWeight: '600'
               }}
             >
               ⏭️ 次の銘柄
