@@ -381,7 +381,8 @@ function App() {
                 <YAxis 
                   yAxisId="price"
                   tick={{ fontSize: 12 }}
-                  domain={['dataMin - 50', 'dataMax + 50']}
+                  domain={[0, 'dataMax + 100']}
+                  tickFormatter={(value) => `¥${value.toLocaleString()}`}
                 />
                 <Tooltip 
                   content={({ active, payload, label }) => {
@@ -485,6 +486,7 @@ function App() {
                 />
                 <YAxis 
                   tick={{ fontSize: 10 }}
+                  domain={[0, 'dataMax + 50000']}
                   tickFormatter={(value) => `${Math.round(value / 1000)}K`}
                 />
                 <Tooltip 
