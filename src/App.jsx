@@ -350,26 +350,37 @@ function App() {
     }
   }
 
-  // 高度なチャートデータを生成
+  // 高度なチャートデータを生成（長期移動平均線対応）
   const generateAdvancedChartData = (basePrice, period, timeframe) => {
     const periodConfig = PERIOD_OPTIONS.find(p => p.value === period)
-    let dataPoints = periodConfig.days
+    let displayDataPoints = periodConfig.days
     
     // 時間軸に応じてデータポイント数を調整
     if (timeframe === 'weekly') {
-      dataPoints = Math.floor(dataPoints / 5)
+      displayDataPoints = Math.floor(displayDataPoints / 5)
     } else if (timeframe === 'monthly') {
-      dataPoints = Math.floor(dataPoints / 22)
+      displayDataPoints = Math.floor(displayDataPoints / 22)
     }
     
-    const data = []
+    // 長期移動平均線のための追加データポイントを計算
+    const maxMAPeriod = Math.max(
+      indicatorParams.sma.short,
+      indicatorParams.sma.medium, 
+      indicatorParams.sma.long,
+      indicatorParams.bollinger.period
+    )
+    
+    // 表示期間 + 最大移動平均期間分のデータを生成
+    const totalDataPoints = displayDataPoints + maxMAPeriod
+    
+    const allData = []
     let currentPrice = basePrice
     let currentDate = new Date()
-    currentDate.setDate(currentDate.getDate() - dataPoints)
+    currentDate.setDate(currentDate.getDate() - totalDataPoints)
     
-    for (let i = 0; i < dataPoints; i++) {
+    for (let i = 0; i < totalDataPoints; i++) {
       // トレンドとランダムウォークを組み合わせ
-      const trend = Math.sin(i / dataPoints * Math.PI * 2) * 0.001
+      const trend = Math.sin(i / totalDataPoints * Math.PI * 4) * 0.001
       const randomWalk = (Math.random() - 0.5) * 0.02
       const priceChange = (trend + randomWalk) * basePrice
       
@@ -393,7 +404,7 @@ function App() {
         dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
       }
       
-      data.push({
+      allData.push({
         date: dateLabel,
         open: Math.round(open),
         high: Math.round(high),
@@ -413,7 +424,8 @@ function App() {
       }
     }
     
-    return data
+    // 表示用データは最後の期間分のみを返す
+    return allData.slice(-displayDataPoints)
   }
 
   // 初期化
@@ -424,8 +436,115 @@ function App() {
 
   // 現在の銘柄
   const currentStock = stocksData[currentIndex]
-  const chartData = currentStock ? generateAdvancedChartData(currentStock.basePrice, selectedPeriod, selectedTimeframe) : []
-  const indicators = chartData.length > 0 ? calculateAllIndicators(chartData, indicatorParams) : {}
+  
+  // チャートデータ生成（長期移動平均線対応）
+  const generateChartDataWithMA = () => {
+    if (!currentStock) return { chartData: [], indicators: {} }
+    
+    const periodConfig = PERIOD_OPTIONS.find(p => p.value === selectedPeriod)
+    let displayDataPoints = periodConfig.days
+    
+    // 時間軸に応じてデータポイント数を調整
+    if (selectedTimeframe === 'weekly') {
+      displayDataPoints = Math.floor(displayDataPoints / 5)
+    } else if (selectedTimeframe === 'monthly') {
+      displayDataPoints = Math.floor(displayDataPoints / 22)
+    }
+    
+    // 長期移動平均線のための追加データポイントを計算
+    const maxMAPeriod = Math.max(
+      indicatorParams.sma.short,
+      indicatorParams.sma.medium, 
+      indicatorParams.sma.long,
+      indicatorParams.bollinger.period,
+      indicatorParams.rsi.period,
+      indicatorParams.macd.slow
+    )
+    
+    // 表示期間 + 最大移動平均期間分のデータを生成
+    const totalDataPoints = displayDataPoints + maxMAPeriod
+    
+    const allData = []
+    let currentPrice = currentStock.basePrice
+    let currentDate = new Date()
+    currentDate.setDate(currentDate.getDate() - totalDataPoints)
+    
+    for (let i = 0; i < totalDataPoints; i++) {
+      // トレンドとランダムウォークを組み合わせ
+      const trend = Math.sin(i / totalDataPoints * Math.PI * 4) * 0.001
+      const randomWalk = (Math.random() - 0.5) * 0.02
+      const priceChange = (trend + randomWalk) * currentStock.basePrice
+      
+      currentPrice = Math.max(currentPrice + priceChange, currentStock.basePrice * 0.3)
+      
+      // ローソク足データを生成
+      const dayVariation = currentPrice * 0.02
+      const open = currentPrice + (Math.random() - 0.5) * dayVariation
+      const close = currentPrice + (Math.random() - 0.5) * dayVariation
+      const high = Math.max(open, close) + Math.random() * dayVariation * 0.5
+      const low = Math.min(open, close) - Math.random() * dayVariation * 0.5
+      const volume = Math.floor(Math.random() * 1000000 + 100000)
+      
+      // 日付フォーマット
+      let dateLabel
+      if (selectedTimeframe === 'monthly') {
+        dateLabel = `${currentDate.getFullYear()}/${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+      } else if (selectedTimeframe === 'weekly') {
+        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
+      } else {
+        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
+      }
+      
+      allData.push({
+        date: dateLabel,
+        open: Math.round(open),
+        high: Math.round(high),
+        low: Math.round(low),
+        close: Math.round(close),
+        volume: volume,
+        priceForLine: Math.round(close)
+      })
+      
+      // 次の日付
+      if (selectedTimeframe === 'monthly') {
+        currentDate.setMonth(currentDate.getMonth() + 1)
+      } else if (selectedTimeframe === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + 7)
+      } else {
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+    }
+    
+    // 全データでテクニカル指標を計算
+    const allIndicators = calculateAllIndicators(allData, indicatorParams)
+    
+    // 表示用データは最後の期間分のみ
+    const chartData = allData.slice(-displayDataPoints)
+    
+    // 指標データも表示期間に合わせて切り出し
+    const indicators = {}
+    Object.keys(allIndicators).forEach(key => {
+      if (key === 'bollingerBands') {
+        indicators[key] = {
+          upper: allIndicators[key].upper.slice(-displayDataPoints),
+          middle: allIndicators[key].middle.slice(-displayDataPoints),
+          lower: allIndicators[key].lower.slice(-displayDataPoints)
+        }
+      } else if (key === 'macd') {
+        indicators[key] = {
+          macd: allIndicators[key].macd.slice(-displayDataPoints),
+          signal: allIndicators[key].signal.slice(-displayDataPoints),
+          histogram: allIndicators[key].histogram.slice(-displayDataPoints)
+        }
+      } else {
+        indicators[key] = allIndicators[key].slice(-displayDataPoints)
+      }
+    })
+    
+    return { chartData, indicators }
+  }
+
+  const { chartData, indicators } = generateChartDataWithMA()
 
   // RSIとMACDのチャートデータを準備
   const rsiData = chartData.map((item, index) => ({
@@ -461,7 +580,7 @@ function App() {
       ...prev,
       [indicator]: {
         ...prev[indicator],
-        [param]: parseInt(value)
+        [param]: parseFloat(value)
       }
     }))
   }
@@ -520,10 +639,10 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v3.1 Pro
+            日本株チャート巡回ツール v3.2 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            TSE主要銘柄対応 - プロレベル株価チャート分析 + カスタマイズ可能テクニカル指標
+            TSE主要銘柄対応 - プロレベル株価チャート分析 + 長期移動平均線完全対応
           </p>
           <div style={{ marginTop: '10px' }}>
             <span style={{ 
@@ -541,9 +660,19 @@ function App() {
               backgroundColor: '#dbeafe', 
               color: '#1e40af', 
               borderRadius: '5px',
-              fontSize: '14px'
+              fontSize: '14px',
+              marginRight: '10px'
             }}>
               📊 {stocksData.length}銘柄
+            </span>
+            <span style={{ 
+              padding: '5px 10px', 
+              backgroundColor: '#fef3c7', 
+              color: '#92400e', 
+              borderRadius: '5px',
+              fontSize: '14px'
+            }}>
+              🚀 長期MA対応
             </span>
           </div>
         </div>
@@ -653,7 +782,7 @@ function App() {
               marginBottom: '20px'
             }}>
               <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px' }}>
-                📈 テクニカル指標 & パラメータ設定
+                📈 テクニカル指標 & パラメータ設定 (長期MA対応)
               </h4>
               
               {/* 指標の表示/非表示切り替え */}
@@ -702,9 +831,9 @@ function App() {
                 {showIndicators.movingAverages && (
                   <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
                     <h5 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px', color: '#374151' }}>
-                      移動平均線期間
+                      移動平均線期間 (長期対応)
                     </h5>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div>
                         <label style={{ fontSize: '12px', color: '#6b7280' }}>短期:</label>
                         <input
@@ -724,7 +853,7 @@ function App() {
                           onChange={(e) => updateIndicatorParam('sma', 'medium', e.target.value)}
                           style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
                           min="1"
-                          max="200"
+                          max="500"
                         />
                       </div>
                       <div>
@@ -733,11 +862,14 @@ function App() {
                           type="number"
                           value={indicatorParams.sma.long}
                           onChange={(e) => updateIndicatorParam('sma', 'long', e.target.value)}
-                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          style={{ width: '60px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
                           min="1"
-                          max="300"
+                          max="1000"
                         />
                       </div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '5px' }}>
+                      💡 200日、1000日移動平均も最初から表示可能
                     </div>
                   </div>
                 )}
@@ -757,7 +889,7 @@ function App() {
                           onChange={(e) => updateIndicatorParam('bollinger', 'period', e.target.value)}
                           style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
                           min="5"
-                          max="100"
+                          max="200"
                         />
                       </div>
                       <div>
