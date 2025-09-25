@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, ReferenceLine } from 'recharts'
+import { calculateAllIndicators } from './utils/technicalIndicators'
 
 // 日本の主要企業データ
 const STOCKS = [
@@ -35,14 +36,19 @@ const TIMEFRAME_OPTIONS = [
   { value: 'monthly', label: '月足' }
 ]
 
-// カスタムローソク足コンポーネント
-const CandlestickChart = ({ data, width, height }) => {
+// カスタムローソク足チャート（テクニカル指標付き）
+const CandlestickChart = ({ data, indicators, width, height, showIndicators }) => {
   const margin = { top: 20, right: 30, bottom: 20, left: 60 }
   const chartWidth = width - margin.left - margin.right
   const chartHeight = height - margin.top - margin.bottom
   
-  // データの最大値と最小値を計算
+  // データの最大値と最小値を計算（ボリンジャーバンドも考慮）
   const allPrices = data.flatMap(d => [d.open, d.high, d.low, d.close])
+  if (showIndicators.bollingerBands && indicators.bollingerBands) {
+    indicators.bollingerBands.upper.forEach(val => val && allPrices.push(val))
+    indicators.bollingerBands.lower.forEach(val => val && allPrices.push(val))
+  }
+  
   const minPrice = Math.min(...allPrices)
   const maxPrice = Math.max(...allPrices)
   const priceRange = maxPrice - minPrice
@@ -97,6 +103,102 @@ const CandlestickChart = ({ data, width, height }) => {
           return null
         })}
       </g>
+      
+      {/* ボリンジャーバンド */}
+      {showIndicators.bollingerBands && indicators.bollingerBands && (
+        <g>
+          {/* 上部バンド */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.bollingerBands.upper[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#9ca3af"
+            strokeWidth={1}
+            fill="none"
+            strokeDasharray="5 5"
+          />
+          
+          {/* 下部バンド */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.bollingerBands.lower[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#9ca3af"
+            strokeWidth={1}
+            fill="none"
+            strokeDasharray="5 5"
+          />
+          
+          {/* 中央線（移動平均線） */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.bollingerBands.middle[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#6b7280"
+            strokeWidth={1}
+            fill="none"
+          />
+        </g>
+      )}
+      
+      {/* 移動平均線 */}
+      {showIndicators.movingAverages && (
+        <g>
+          {/* 短期移動平均線 (5日) */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.sma5[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#f59e0b"
+            strokeWidth={2}
+            fill="none"
+          />
+          
+          {/* 中期移動平均線 (25日) */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.sma25[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#3b82f6"
+            strokeWidth={2}
+            fill="none"
+          />
+          
+          {/* 長期移動平均線 (75日) */}
+          <path
+            d={data.map((_, index) => {
+              const x = margin.left + index * candleSpacing + candleSpacing / 2
+              const value = indicators.sma75[index]
+              if (value === null) return ''
+              const y = margin.top + ((yMax - value) / yRange) * chartHeight
+              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+            }).join(' ')}
+            stroke="#8b5cf6"
+            strokeWidth={2}
+            fill="none"
+          />
+        </g>
+      )}
       
       {/* Y軸ラベル */}
       <g>
@@ -219,6 +321,12 @@ function App() {
   const [stocksData, setStocksData] = useState([])
   const [selectedPeriod, setSelectedPeriod] = useState('1Y')
   const [selectedTimeframe, setSelectedTimeframe] = useState('daily')
+  const [showIndicators, setShowIndicators] = useState({
+    movingAverages: true,
+    bollingerBands: true,
+    rsi: false,
+    macd: false
+  })
 
   // 株価データを生成
   const generateStockData = (stock) => {
@@ -309,6 +417,20 @@ function App() {
   // 現在の銘柄
   const currentStock = stocksData[currentIndex]
   const chartData = currentStock ? generateAdvancedChartData(currentStock.basePrice, selectedPeriod, selectedTimeframe) : []
+  const indicators = chartData.length > 0 ? calculateAllIndicators(chartData) : {}
+
+  // RSIとMACDのチャートデータを準備
+  const rsiData = chartData.map((item, index) => ({
+    date: item.date,
+    rsi: indicators.rsi ? indicators.rsi[index] : null
+  }))
+
+  const macdData = chartData.map((item, index) => ({
+    date: item.date,
+    macd: indicators.macd ? indicators.macd.macd[index] : null,
+    signal: indicators.macd ? indicators.macd.signal[index] : null,
+    histogram: indicators.macd ? indicators.macd.histogram[index] : null
+  }))
 
   // 次の銘柄
   const goToNext = () => {
@@ -370,7 +492,7 @@ function App() {
       padding: '20px',
       fontFamily: 'Arial, sans-serif'
     }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
         {/* ヘッダー */}
         <div style={{ marginBottom: '30px', textAlign: 'center' }}>
           <h1 style={{ 
@@ -379,10 +501,10 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v2.0 Pro
+            日本株チャート巡回ツール v3.0 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            TSE主要銘柄対応 - プロレベル株価チャート分析
+            TSE主要銘柄対応 - プロレベル株価チャート分析 + テクニカル指標
           </p>
           <div style={{ marginTop: '10px' }}>
             <span style={{ 
@@ -444,207 +566,406 @@ function App() {
           </div>
         </div>
 
-        {/* チャート設定 */}
-        <div style={{ 
-          backgroundColor: 'white', 
-          padding: '20px', 
-          borderRadius: '10px', 
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-          marginBottom: '20px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-            <div>
-              <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>表示期間:</label>
-              {PERIOD_OPTIONS.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => setSelectedPeriod(option.value)}
-                  style={{
-                    padding: '5px 12px',
-                    margin: '0 3px',
-                    border: selectedPeriod === option.value ? '2px solid #2563eb' : '1px solid #d1d5db',
-                    borderRadius: '5px',
-                    backgroundColor: selectedPeriod === option.value ? '#eff6ff' : 'white',
-                    color: selectedPeriod === option.value ? '#2563eb' : '#374151',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            
-            <div>
-              <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>時間軸:</label>
-              {TIMEFRAME_OPTIONS.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => setSelectedTimeframe(option.value)}
-                  style={{
-                    padding: '5px 12px',
-                    margin: '0 3px',
-                    border: selectedTimeframe === option.value ? '2px solid #059669' : '1px solid #d1d5db',
-                    borderRadius: '5px',
-                    backgroundColor: selectedTimeframe === option.value ? '#f0fdf4' : 'white',
-                    color: selectedTimeframe === option.value ? '#059669' : '#374151',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* チャート */}
-        <div style={{ 
-          backgroundColor: 'white', 
-          padding: '30px', 
-          borderRadius: '10px', 
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-          marginBottom: '30px'
-        }}>
-          <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>
-            🕯️ ローソク足チャート ({PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label} - {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label})
-          </h3>
-          
-          {/* 株価チャート */}
-          <div style={{ height: '400px', marginBottom: '20px' }}>
-            <CandlestickChart data={chartData} width={1340} height={400} />
-          </div>
-          
-          {/* 出来高チャート */}
-          <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
-            📊 出来高
-          </h4>
-          <div style={{ height: '150px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
-                  tick={{ fontSize: 12 }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis 
-                  tick={{ fontSize: 12 }}
-                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
-                />
-                <Tooltip 
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div style={{
-                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                          border: '1px solid #ccc',
-                          borderRadius: '5px',
-                          padding: '10px'
-                        }}>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
-                          <p style={{ margin: '2px 0', fontSize: '12px' }}>出来高: {data.volume?.toLocaleString()}株</p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="volume" fill="#8884d8" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* コントロール */}
-        <div style={{ 
-          backgroundColor: 'white', 
-          padding: '30px', 
-          borderRadius: '10px', 
-          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-          textAlign: 'center'
-        }}>
-          <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>
-            🎮 巡回コントロール
-          </h3>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <span style={{ 
-              fontSize: '16px', 
-              color: '#6b7280',
-              marginRight: '20px'
+        {/* メインコンテンツエリア */}
+        <div style={{ display: 'flex', gap: '20px' }}>
+          {/* 左側: チャートエリア */}
+          <div style={{ flex: '1' }}>
+            {/* チャート設定 */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '20px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '20px'
             }}>
-              {currentIndex + 1} / {stocksData.length}
-            </span>
-            
-            {isPlaying && (
-              <span style={{ 
-                padding: '3px 8px', 
-                backgroundColor: '#fef3c7', 
-                color: '#92400e', 
-                borderRadius: '5px',
-                fontSize: '12px'
-              }}>
-                🔄 自動巡回中 (3秒間隔)
-              </span>
-            )}
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <button
-              onClick={goToPrevious}
-              style={{
-                padding: '12px 24px',
-                margin: '0 10px',
-                border: '2px solid #d1d5db',
-                borderRadius: '8px',
-                backgroundColor: 'white',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: '600'
-              }}
-            >
-              ⏮️ 前の銘柄
-            </button>
-            
-            <button
-              onClick={togglePlayback}
-              style={{
-                padding: '12px 24px',
-                margin: '0 10px',
-                border: 'none',
-                borderRadius: '8px',
-                backgroundColor: isPlaying ? '#dc2626' : '#2563eb',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: 'bold'
-              }}
-            >
-              {isPlaying ? '⏸️ 停止' : '▶️ 自動巡回開始'}
-            </button>
-            
-            <button
-              onClick={goToNext}
-              style={{
-                padding: '12px 24px',
-                margin: '0 10px',
-                border: '2px solid #d1d5db',
-                borderRadius: '8px',
-                backgroundColor: 'white',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: '600'
-              }}
-            >
-              ⏭️ 次の銘柄
-            </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                <div>
+                  <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>表示期間:</label>
+                  {PERIOD_OPTIONS.map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSelectedPeriod(option.value)}
+                      style={{
+                        padding: '5px 12px',
+                        margin: '0 3px',
+                        border: selectedPeriod === option.value ? '2px solid #2563eb' : '1px solid #d1d5db',
+                        borderRadius: '5px',
+                        backgroundColor: selectedPeriod === option.value ? '#eff6ff' : 'white',
+                        color: selectedPeriod === option.value ? '#2563eb' : '#374151',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                
+                <div>
+                  <label style={{ fontSize: '14px', fontWeight: '600', marginRight: '10px' }}>時間軸:</label>
+                  {TIMEFRAME_OPTIONS.map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSelectedTimeframe(option.value)}
+                      style={{
+                        padding: '5px 12px',
+                        margin: '0 3px',
+                        border: selectedTimeframe === option.value ? '2px solid #059669' : '1px solid #d1d5db',
+                        borderRadius: '5px',
+                        backgroundColor: selectedTimeframe === option.value ? '#f0fdf4' : 'white',
+                        color: selectedTimeframe === option.value ? '#059669' : '#374151',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* テクニカル指標設定 */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '20px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '20px'
+            }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px' }}>
+                📈 テクニカル指標
+              </h4>
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showIndicators.movingAverages}
+                    onChange={(e) => setShowIndicators(prev => ({ ...prev, movingAverages: e.target.checked }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span style={{ fontSize: '14px' }}>移動平均線 (5,25,75日)</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showIndicators.bollingerBands}
+                    onChange={(e) => setShowIndicators(prev => ({ ...prev, bollingerBands: e.target.checked }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span style={{ fontSize: '14px' }}>ボリンジャーバンド</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showIndicators.rsi}
+                    onChange={(e) => setShowIndicators(prev => ({ ...prev, rsi: e.target.checked }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span style={{ fontSize: '14px' }}>RSI</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showIndicators.macd}
+                    onChange={(e) => setShowIndicators(prev => ({ ...prev, macd: e.target.checked }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span style={{ fontSize: '14px' }}>MACD</span>
+                </label>
+              </div>
+              
+              {/* 凡例 */}
+              {showIndicators.movingAverages && (
+                <div style={{ marginTop: '15px', display: 'flex', gap: '15px', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '20px', height: '3px', backgroundColor: '#f59e0b', marginRight: '5px' }}></div>
+                    <span>短期 (5日)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '20px', height: '3px', backgroundColor: '#3b82f6', marginRight: '5px' }}></div>
+                    <span>中期 (25日)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '20px', height: '3px', backgroundColor: '#8b5cf6', marginRight: '5px' }}></div>
+                    <span>長期 (75日)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* チャート */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '30px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '30px'
+            }}>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>
+                🕯️ ローソク足チャート ({PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label} - {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label})
+              </h3>
+              
+              {/* 株価チャート */}
+              <div style={{ height: '500px', marginBottom: '20px' }}>
+                <CandlestickChart 
+                  data={chartData} 
+                  indicators={indicators}
+                  width={1200} 
+                  height={500}
+                  showIndicators={showIndicators}
+                />
+              </div>
+              
+              {/* 出来高チャート */}
+              <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+                📊 出来高
+              </h4>
+              <div style={{ height: '150px', marginBottom: '30px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 12 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
+                    />
+                    <Tooltip 
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div style={{
+                              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                              border: '1px solid #ccc',
+                              borderRadius: '5px',
+                              padding: '10px'
+                            }}>
+                              <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
+                              <p style={{ margin: '2px 0', fontSize: '12px' }}>出来高: {data.volume?.toLocaleString()}株</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="volume" fill="#8884d8" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* RSIチャート */}
+              {showIndicators.rsi && (
+                <>
+                  <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+                    📈 RSI (相対力指数)
+                  </h4>
+                  <div style={{ height: '200px', marginBottom: '30px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={rsiData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          interval="preserveStartEnd"
+                        />
+                        <YAxis 
+                          domain={[0, 100]}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <Tooltip 
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                  border: '1px solid #ccc',
+                                  borderRadius: '5px',
+                                  padding: '10px'
+                                }}>
+                                  <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
+                                  <p style={{ margin: '2px 0', fontSize: '12px' }}>RSI: {data.rsi?.toFixed(2)}</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="5 5" />
+                        <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="5 5" />
+                        <ReferenceLine y={50} stroke="#6b7280" strokeDasharray="2 2" />
+                        <Line type="monotone" dataKey="rsi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+
+              {/* MACDチャート */}
+              {showIndicators.macd && (
+                <>
+                  <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+                    📊 MACD (移動平均収束拡散法)
+                  </h4>
+                  <div style={{ height: '200px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={macdData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          interval="preserveStartEnd"
+                        />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip 
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                  border: '1px solid #ccc',
+                                  borderRadius: '5px',
+                                  padding: '10px'
+                                }}>
+                                  <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
+                                  <p style={{ margin: '2px 0', fontSize: '12px' }}>MACD: {data.macd?.toFixed(2)}</p>
+                                  <p style={{ margin: '2px 0', fontSize: '12px' }}>Signal: {data.signal?.toFixed(2)}</p>
+                                  <p style={{ margin: '2px 0', fontSize: '12px' }}>Histogram: {data.histogram?.toFixed(2)}</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="2 2" />
+                        <Bar dataKey="histogram" fill="#94a3b8" />
+                        <Line type="monotone" dataKey="macd" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="signal" stroke="#ef4444" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>
-            <p>キーボードショートカット: Space (再生/停止), ← → (前/次の銘柄)</p>
+          {/* 右側: コントロールパネル */}
+          <div style={{ width: '300px' }}>
+            {/* 巡回コントロール */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '25px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', textAlign: 'center' }}>
+                🎮 巡回コントロール
+              </h3>
+              
+              <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+                <span style={{ 
+                  fontSize: '16px', 
+                  color: '#6b7280',
+                  marginRight: '20px'
+                }}>
+                  {currentIndex + 1} / {stocksData.length}
+                </span>
+                
+                {isPlaying && (
+                  <div style={{ marginTop: '10px' }}>
+                    <span style={{ 
+                      padding: '3px 8px', 
+                      backgroundColor: '#fef3c7', 
+                      color: '#92400e', 
+                      borderRadius: '5px',
+                      fontSize: '12px'
+                    }}>
+                      🔄 自動巡回中 (3秒間隔)
+                    </span>
+                  </div>
+                )}
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  onClick={goToPrevious}
+                  style={{
+                    padding: '12px 20px',
+                    border: '2px solid #d1d5db',
+                    borderRadius: '8px',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    width: '100%'
+                  }}
+                >
+                  ⏮️ 前の銘柄
+                </button>
+                
+                <button
+                  onClick={togglePlayback}
+                  style={{
+                    padding: '15px 20px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    backgroundColor: isPlaying ? '#dc2626' : '#2563eb',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    width: '100%'
+                  }}
+                >
+                  {isPlaying ? '⏸️ 停止' : '▶️ 自動巡回開始'}
+                </button>
+                
+                <button
+                  onClick={goToNext}
+                  style={{
+                    padding: '12px 20px',
+                    border: '2px solid #d1d5db',
+                    borderRadius: '8px',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    width: '100%'
+                  }}
+                >
+                  ⏭️ 次の銘柄
+                </button>
+              </div>
+
+              <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center', marginTop: '15px' }}>
+                <p>キーボードショートカット:</p>
+                <p>Space (再生/停止)</p>
+                <p>← → (前/次の銘柄)</p>
+              </div>
+            </div>
+
+            {/* 将来のお気に入り機能用スペース */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '25px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              textAlign: 'center'
+            }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px', color: '#9ca3af' }}>
+                ⭐ お気に入り機能
+              </h4>
+              <p style={{ fontSize: '14px', color: '#9ca3af' }}>
+                準備中...
+              </p>
+            </div>
           </div>
         </div>
       </div>
