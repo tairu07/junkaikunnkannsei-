@@ -36,6 +36,59 @@ const TIMEFRAME_OPTIONS = [
   { value: 'monthly', label: '月足' }
 ]
 
+// お気に入り管理ユーティリティ
+const FavoritesManager = {
+  // お気に入りを取得
+  getFavorites: () => {
+    try {
+      const favorites = localStorage.getItem('stockFavorites')
+      return favorites ? JSON.parse(favorites) : []
+    } catch (error) {
+      console.error('Failed to load favorites:', error)
+      return []
+    }
+  },
+
+  // お気に入りを保存
+  saveFavorites: (favorites) => {
+    try {
+      localStorage.setItem('stockFavorites', JSON.stringify(favorites))
+      return true
+    } catch (error) {
+      console.error('Failed to save favorites:', error)
+      return false
+    }
+  },
+
+  // お気に入りに追加
+  addFavorite: (stockCode) => {
+    const favorites = FavoritesManager.getFavorites()
+    if (!favorites.includes(stockCode)) {
+      favorites.push(stockCode)
+      return FavoritesManager.saveFavorites(favorites)
+    }
+    return true
+  },
+
+  // お気に入りから削除
+  removeFavorite: (stockCode) => {
+    const favorites = FavoritesManager.getFavorites()
+    const updatedFavorites = favorites.filter(code => code !== stockCode)
+    return FavoritesManager.saveFavorites(updatedFavorites)
+  },
+
+  // お気に入りかどうかチェック
+  isFavorite: (stockCode) => {
+    const favorites = FavoritesManager.getFavorites()
+    return favorites.includes(stockCode)
+  },
+
+  // お気に入り順序を更新
+  updateOrder: (orderedCodes) => {
+    return FavoritesManager.saveFavorites(orderedCodes)
+  }
+}
+
 // カスタムローソク足チャート（テクニカル指標付き）
 const CandlestickChart = ({ data, indicators, width, height, showIndicators }) => {
   const margin = { top: 20, right: 30, bottom: 20, left: 60 }
@@ -315,6 +368,11 @@ function App() {
     macd: false
   })
   
+  // お気に入り機能の状態
+  const [favorites, setFavorites] = useState([])
+  const [viewMode, setViewMode] = useState('all') // 'all' or 'favorites'
+  const [showFavoritesManager, setShowFavoritesManager] = useState(false)
+  
   // テクニカル指標のパラメータ設定
   const [indicatorParams, setIndicatorParams] = useState({
     sma: {
@@ -336,6 +394,87 @@ function App() {
     }
   })
 
+  // お気に入り機能の初期化
+  useEffect(() => {
+    const savedFavorites = FavoritesManager.getFavorites()
+    setFavorites(savedFavorites)
+  }, [])
+
+  // 表示する銘柄リストを取得
+  const getDisplayStocks = () => {
+    if (viewMode === 'favorites') {
+      return stocksData.filter(stock => favorites.includes(stock.code))
+    }
+    return stocksData
+  }
+
+  // 現在表示中の銘柄がお気に入りかどうか
+  const isCurrentFavorite = () => {
+    const currentStock = getDisplayStocks()[currentIndex]
+    return currentStock ? favorites.includes(currentStock.code) : false
+  }
+
+  // お気に入りの追加/削除
+  const toggleFavorite = () => {
+    const currentStock = getDisplayStocks()[currentIndex]
+    if (!currentStock) return
+
+    const isFav = favorites.includes(currentStock.code)
+    let updatedFavorites
+
+    if (isFav) {
+      // お気に入りから削除
+      updatedFavorites = favorites.filter(code => code !== currentStock.code)
+      FavoritesManager.removeFavorite(currentStock.code)
+    } else {
+      // お気に入りに追加
+      updatedFavorites = [...favorites, currentStock.code]
+      FavoritesManager.addFavorite(currentStock.code)
+    }
+
+    setFavorites(updatedFavorites)
+
+    // お気に入りモードで削除した場合、インデックスを調整
+    if (viewMode === 'favorites' && isFav) {
+      const newDisplayStocks = stocksData.filter(stock => updatedFavorites.includes(stock.code))
+      if (newDisplayStocks.length === 0) {
+        setViewMode('all')
+        setCurrentIndex(0)
+      } else if (currentIndex >= newDisplayStocks.length) {
+        setCurrentIndex(newDisplayStocks.length - 1)
+      }
+    }
+  }
+
+  // 表示モードの切り替え
+  const switchViewMode = (mode) => {
+    setViewMode(mode)
+    setCurrentIndex(0)
+    setIsPlaying(false)
+  }
+
+  // お気に入り管理画面の表示切り替え
+  const toggleFavoritesManager = () => {
+    setShowFavoritesManager(!showFavoritesManager)
+    setIsPlaying(false)
+  }
+
+  // お気に入り一覧での削除
+  const removeFavoriteFromList = (stockCode) => {
+    const updatedFavorites = favorites.filter(code => code !== stockCode)
+    setFavorites(updatedFavorites)
+    FavoritesManager.removeFavorite(stockCode)
+  }
+
+  // お気に入りの並び替え
+  const reorderFavorites = (fromIndex, toIndex) => {
+    const newFavorites = [...favorites]
+    const [removed] = newFavorites.splice(fromIndex, 1)
+    newFavorites.splice(toIndex, 0, removed)
+    setFavorites(newFavorites)
+    FavoritesManager.updateOrder(newFavorites)
+  }
+
   // 株価データを生成
   const generateStockData = (stock) => {
     const change = (Math.random() - 0.5) * stock.basePrice * 0.05
@@ -351,94 +490,10 @@ function App() {
   }
 
   // 高度なチャートデータを生成（長期移動平均線対応）
-  const generateAdvancedChartData = (basePrice, period, timeframe) => {
-    const periodConfig = PERIOD_OPTIONS.find(p => p.value === period)
-    let displayDataPoints = periodConfig.days
-    
-    // 時間軸に応じてデータポイント数を調整
-    if (timeframe === 'weekly') {
-      displayDataPoints = Math.floor(displayDataPoints / 5)
-    } else if (timeframe === 'monthly') {
-      displayDataPoints = Math.floor(displayDataPoints / 22)
-    }
-    
-    // 長期移動平均線のための追加データポイントを計算
-    const maxMAPeriod = Math.max(
-      indicatorParams.sma.short,
-      indicatorParams.sma.medium, 
-      indicatorParams.sma.long,
-      indicatorParams.bollinger.period
-    )
-    
-    // 表示期間 + 最大移動平均期間分のデータを生成
-    const totalDataPoints = displayDataPoints + maxMAPeriod
-    
-    const allData = []
-    let currentPrice = basePrice
-    let currentDate = new Date()
-    currentDate.setDate(currentDate.getDate() - totalDataPoints)
-    
-    for (let i = 0; i < totalDataPoints; i++) {
-      // トレンドとランダムウォークを組み合わせ
-      const trend = Math.sin(i / totalDataPoints * Math.PI * 4) * 0.001
-      const randomWalk = (Math.random() - 0.5) * 0.02
-      const priceChange = (trend + randomWalk) * basePrice
-      
-      currentPrice = Math.max(currentPrice + priceChange, basePrice * 0.3)
-      
-      // ローソク足データを生成
-      const dayVariation = currentPrice * 0.02
-      const open = currentPrice + (Math.random() - 0.5) * dayVariation
-      const close = currentPrice + (Math.random() - 0.5) * dayVariation
-      const high = Math.max(open, close) + Math.random() * dayVariation * 0.5
-      const low = Math.min(open, close) - Math.random() * dayVariation * 0.5
-      const volume = Math.floor(Math.random() * 1000000 + 100000)
-      
-      // 日付フォーマット
-      let dateLabel
-      if (timeframe === 'monthly') {
-        dateLabel = `${currentDate.getFullYear()}/${String(currentDate.getMonth() + 1).padStart(2, '0')}`
-      } else if (timeframe === 'weekly') {
-        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
-      } else {
-        dateLabel = `${currentDate.getMonth() + 1}/${currentDate.getDate()}`
-      }
-      
-      allData.push({
-        date: dateLabel,
-        open: Math.round(open),
-        high: Math.round(high),
-        low: Math.round(low),
-        close: Math.round(close),
-        volume: volume,
-        priceForLine: Math.round(close) // ライン表示用
-      })
-      
-      // 次の日付
-      if (timeframe === 'monthly') {
-        currentDate.setMonth(currentDate.getMonth() + 1)
-      } else if (timeframe === 'weekly') {
-        currentDate.setDate(currentDate.getDate() + 7)
-      } else {
-        currentDate.setDate(currentDate.getDate() + 1)
-      }
-    }
-    
-    // 表示用データは最後の期間分のみを返す
-    return allData.slice(-displayDataPoints)
-  }
-
-  // 初期化
-  useEffect(() => {
-    const initialData = STOCKS.map(generateStockData)
-    setStocksData(initialData)
-  }, [])
-
-  // 現在の銘柄
-  const currentStock = stocksData[currentIndex]
-  
-  // チャートデータ生成（長期移動平均線対応）
   const generateChartDataWithMA = () => {
+    const displayStocks = getDisplayStocks()
+    const currentStock = displayStocks[currentIndex]
+    
     if (!currentStock) return { chartData: [], indicators: {} }
     
     const periodConfig = PERIOD_OPTIONS.find(p => p.value === selectedPeriod)
@@ -544,6 +599,12 @@ function App() {
     return { chartData, indicators }
   }
 
+  // 初期化
+  useEffect(() => {
+    const initialData = STOCKS.map(generateStockData)
+    setStocksData(initialData)
+  }, [])
+
   const { chartData, indicators } = generateChartDataWithMA()
 
   // RSIとMACDのチャートデータを準備
@@ -561,12 +622,14 @@ function App() {
 
   // 次の銘柄
   const goToNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % stocksData.length)
+    const displayStocks = getDisplayStocks()
+    setCurrentIndex((prev) => (prev + 1) % displayStocks.length)
   }
 
   // 前の銘柄
   const goToPrevious = () => {
-    setCurrentIndex((prev) => (prev - 1 + stocksData.length) % stocksData.length)
+    const displayStocks = getDisplayStocks()
+    setCurrentIndex((prev) => (prev - 1 + displayStocks.length) % displayStocks.length)
   }
 
   // 再生/停止
@@ -587,14 +650,15 @@ function App() {
 
   // 自動ローテーション
   useEffect(() => {
-    if (!isPlaying || stocksData.length === 0) return
+    const displayStocks = getDisplayStocks()
+    if (!isPlaying || displayStocks.length === 0) return
 
     const interval = setInterval(() => {
       goToNext()
     }, 3000) // 3秒間隔
 
     return () => clearInterval(interval)
-  }, [isPlaying, stocksData.length])
+  }, [isPlaying, viewMode, favorites])
 
   // キーボードショートカット
   useEffect(() => {
@@ -612,15 +676,219 @@ function App() {
           e.preventDefault()
           goToNext()
           break
+        case 'f':
+        case 'F':
+          e.preventDefault()
+          toggleFavorite()
+          break
       }
     }
 
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [])
+  }, [currentIndex, viewMode, favorites])
+
+  const displayStocks = getDisplayStocks()
+  const currentStock = displayStocks[currentIndex]
 
   if (!currentStock) {
-    return <div>Loading...</div>
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f9fafb', 
+        padding: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: '24px', marginBottom: '20px' }}>
+            {viewMode === 'favorites' ? 'お気に入り銘柄がありません' : 'Loading...'}
+          </h2>
+          {viewMode === 'favorites' && (
+            <button
+              onClick={() => switchViewMode('all')}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '16px'
+              }}
+            >
+              全銘柄表示に戻る
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // お気に入り管理画面
+  if (showFavoritesManager) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f9fafb', 
+        padding: '20px',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          {/* ヘッダー */}
+          <div style={{ marginBottom: '30px', textAlign: 'center' }}>
+            <h1 style={{ 
+              fontSize: '32px', 
+              fontWeight: 'bold', 
+              color: '#111827', 
+              marginBottom: '10px' 
+            }}>
+              ⭐ お気に入り銘柄管理
+            </h1>
+            <p style={{ color: '#6b7280', fontSize: '16px' }}>
+              お気に入り銘柄の一覧・削除・並び替えができます
+            </p>
+          </div>
+
+          {/* 戻るボタン */}
+          <div style={{ marginBottom: '30px' }}>
+            <button
+              onClick={toggleFavoritesManager}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              ← チャート画面に戻る
+            </button>
+          </div>
+
+          {/* お気に入り一覧 */}
+          <div style={{ 
+            backgroundColor: 'white', 
+            padding: '30px', 
+            borderRadius: '10px', 
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '20px' }}>
+              お気に入り一覧 ({favorites.length}銘柄)
+            </h2>
+
+            {favorites.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+                <p style={{ fontSize: '18px', marginBottom: '20px' }}>
+                  お気に入り銘柄がありません
+                </p>
+                <p style={{ fontSize: '14px' }}>
+                  チャート画面で⭐ボタンを押してお気に入りに追加してください
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '15px' }}>
+                {favorites.map((code, index) => {
+                  const stock = STOCKS.find(s => s.code === code)
+                  if (!stock) return null
+
+                  return (
+                    <div
+                      key={code}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '15px 20px',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '8px',
+                        border: '1px solid #e2e8f0'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ 
+                          fontSize: '16px', 
+                          fontWeight: '600', 
+                          color: '#6b7280',
+                          minWidth: '30px'
+                        }}>
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '2px' }}>
+                            {stock.code} - {stock.name}
+                          </div>
+                          <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                            {stock.market}市場
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        {/* 上に移動 */}
+                        {index > 0 && (
+                          <button
+                            onClick={() => reorderFavorites(index, index - 1)}
+                            style={{
+                              padding: '8px 12px',
+                              backgroundColor: '#e5e7eb',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '14px'
+                            }}
+                          >
+                            ↑
+                          </button>
+                        )}
+                        
+                        {/* 下に移動 */}
+                        {index < favorites.length - 1 && (
+                          <button
+                            onClick={() => reorderFavorites(index, index + 1)}
+                            style={{
+                              padding: '8px 12px',
+                              backgroundColor: '#e5e7eb',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '14px'
+                            }}
+                          >
+                            ↓
+                          </button>
+                        )}
+                        
+                        {/* 削除ボタン */}
+                        <button
+                          onClick={() => removeFavoriteFromList(code)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#ef4444',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -639,10 +907,10 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v3.2 Pro
+            日本株チャート巡回ツール v4.0 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            TSE主要銘柄対応 - プロレベル株価チャート分析 + 長期移動平均線完全対応
+            TSE主要銘柄対応 - プロレベル株価チャート分析 + 長期移動平均線完全対応 + お気に入り機能
           </p>
           <div style={{ marginTop: '10px' }}>
             <span style={{ 
@@ -663,17 +931,85 @@ function App() {
               fontSize: '14px',
               marginRight: '10px'
             }}>
-              📊 {stocksData.length}銘柄
+              📊 {displayStocks.length}銘柄 ({viewMode === 'favorites' ? 'お気に入り' : '全銘柄'})
             </span>
             <span style={{ 
               padding: '5px 10px', 
               backgroundColor: '#fef3c7', 
               color: '#92400e', 
               borderRadius: '5px',
-              fontSize: '14px'
+              fontSize: '14px',
+              marginRight: '10px'
             }}>
               🚀 長期MA対応
             </span>
+            <span style={{ 
+              padding: '5px 10px', 
+              backgroundColor: '#fce7f3', 
+              color: '#be185d', 
+              borderRadius: '5px',
+              fontSize: '14px'
+            }}>
+              ⭐ お気に入り機能
+            </span>
+          </div>
+        </div>
+
+        {/* 表示モード切り替え */}
+        <div style={{ 
+          backgroundColor: 'white', 
+          padding: '20px', 
+          borderRadius: '10px', 
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+            <button
+              onClick={() => switchViewMode('all')}
+              style={{
+                padding: '12px 24px',
+                border: viewMode === 'all' ? '2px solid #2563eb' : '1px solid #d1d5db',
+                borderRadius: '8px',
+                backgroundColor: viewMode === 'all' ? '#eff6ff' : 'white',
+                color: viewMode === 'all' ? '#2563eb' : '#374151',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              📊 全銘柄表示 ({STOCKS.length}銘柄)
+            </button>
+            <button
+              onClick={() => switchViewMode('favorites')}
+              style={{
+                padding: '12px 24px',
+                border: viewMode === 'favorites' ? '2px solid #be185d' : '1px solid #d1d5db',
+                borderRadius: '8px',
+                backgroundColor: viewMode === 'favorites' ? '#fdf2f8' : 'white',
+                color: viewMode === 'favorites' ? '#be185d' : '#374151',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              ⭐ お気に入り表示 ({favorites.length}銘柄)
+            </button>
+            <button
+              onClick={toggleFavoritesManager}
+              style={{
+                padding: '12px 24px',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                backgroundColor: 'white',
+                color: '#374151',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              🛠️ お気に入り管理
+            </button>
           </div>
         </div>
 
@@ -689,6 +1025,9 @@ function App() {
             <div>
               <h2 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '5px' }}>
                 {currentStock.code} - {currentStock.name}
+                {isCurrentFavorite() && (
+                  <span style={{ marginLeft: '10px', fontSize: '24px' }}>⭐</span>
+                )}
               </h2>
               <span style={{ 
                 padding: '3px 8px', 
@@ -1155,6 +1494,42 @@ function App() {
 
           {/* 右側: コントロールパネル */}
           <div style={{ width: '300px' }}>
+            {/* お気に入りコントロール */}
+            <div style={{ 
+              backgroundColor: 'white', 
+              padding: '25px', 
+              borderRadius: '10px', 
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', textAlign: 'center' }}>
+                ⭐ お気に入り
+              </h3>
+              
+              <button
+                onClick={toggleFavorite}
+                style={{
+                  width: '100%',
+                  padding: '15px 20px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  backgroundColor: isCurrentFavorite() ? '#ef4444' : '#fbbf24',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  marginBottom: '15px'
+                }}
+              >
+                {isCurrentFavorite() ? '⭐ お気に入りから削除' : '⭐ お気に入りに追加'}
+              </button>
+
+              <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
+                <p>キーボードショートカット: F</p>
+                <p>お気に入り: {favorites.length}銘柄</p>
+              </div>
+            </div>
+
             {/* 巡回コントロール */}
             <div style={{ 
               backgroundColor: 'white', 
@@ -1173,7 +1548,7 @@ function App() {
                   color: '#6b7280',
                   marginRight: '20px'
                 }}>
-                  {currentIndex + 1} / {stocksData.length}
+                  {currentIndex + 1} / {displayStocks.length}
                 </span>
                 
                 {isPlaying && (
@@ -1246,23 +1621,8 @@ function App() {
                 <p>キーボードショートカット:</p>
                 <p>Space (再生/停止)</p>
                 <p>← → (前/次の銘柄)</p>
+                <p>F (お気に入り切り替え)</p>
               </div>
-            </div>
-
-            {/* 将来のお気に入り機能用スペース */}
-            <div style={{ 
-              backgroundColor: 'white', 
-              padding: '25px', 
-              borderRadius: '10px', 
-              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-              textAlign: 'center'
-            }}>
-              <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px', color: '#9ca3af' }}>
-                ⭐ お気に入り機能
-              </h4>
-              <p style={{ fontSize: '14px', color: '#9ca3af' }}>
-                準備中...
-              </p>
             </div>
           </div>
         </div>
