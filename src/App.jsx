@@ -36,37 +36,180 @@ const TIMEFRAME_OPTIONS = [
 ]
 
 // カスタムローソク足コンポーネント
-const CandlestickBar = ({ payload, x, y, width, height }) => {
-  if (!payload) return null
+const CandlestickChart = ({ data, width, height }) => {
+  const margin = { top: 20, right: 30, bottom: 20, left: 60 }
+  const chartWidth = width - margin.left - margin.right
+  const chartHeight = height - margin.top - margin.bottom
   
-  const { open, high, low, close } = payload
-  const isPositive = close >= open
-  const color = isPositive ? '#22c55e' : '#ef4444'
-  const bodyHeight = Math.abs(close - open)
-  const bodyY = Math.min(close, open)
+  // データの最大値と最小値を計算
+  const allPrices = data.flatMap(d => [d.open, d.high, d.low, d.close])
+  const minPrice = Math.min(...allPrices)
+  const maxPrice = Math.max(...allPrices)
+  const priceRange = maxPrice - minPrice
+  const padding = priceRange * 0.1
+  const yMin = Math.max(0, minPrice - padding)
+  const yMax = maxPrice + padding
+  const yRange = yMax - yMin
+  
+  // X軸の計算
+  const candleWidth = Math.max(chartWidth / data.length * 0.7, 3)
+  const candleSpacing = chartWidth / data.length
   
   return (
-    <g>
-      {/* 高値-安値の線 */}
-      <line
-        x1={x + width / 2}
-        y1={high}
-        x2={x + width / 2}
-        y2={low}
-        stroke={color}
-        strokeWidth={1}
-      />
-      {/* ローソク足の実体 */}
-      <rect
-        x={x + width * 0.2}
-        y={bodyY}
-        width={width * 0.6}
-        height={Math.max(bodyHeight, 1)}
-        fill={isPositive ? color : color}
-        stroke={color}
-        strokeWidth={1}
-      />
-    </g>
+    <svg width={width} height={height}>
+      {/* 背景 */}
+      <rect width={width} height={height} fill="white" />
+      
+      {/* グリッド線 */}
+      <g>
+        {/* 水平グリッド線 */}
+        {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
+          const y = margin.top + chartHeight * ratio
+          return (
+            <line
+              key={ratio}
+              x1={margin.left}
+              y1={y}
+              x2={margin.left + chartWidth}
+              y2={y}
+              stroke="#e5e7eb"
+              strokeDasharray="3 3"
+            />
+          )
+        })}
+        
+        {/* 垂直グリッド線 */}
+        {data.map((_, index) => {
+          if (index % Math.ceil(data.length / 10) === 0) {
+            const x = margin.left + index * candleSpacing + candleSpacing / 2
+            return (
+              <line
+                key={index}
+                x1={x}
+                y1={margin.top}
+                x2={x}
+                y2={margin.top + chartHeight}
+                stroke="#e5e7eb"
+                strokeDasharray="3 3"
+              />
+            )
+          }
+          return null
+        })}
+      </g>
+      
+      {/* Y軸ラベル */}
+      <g>
+        {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
+          const y = margin.top + chartHeight * ratio
+          const price = yMax - (yMax - yMin) * ratio
+          return (
+            <text
+              key={ratio}
+              x={margin.left - 10}
+              y={y + 4}
+              textAnchor="end"
+              fontSize="12"
+              fill="#6b7280"
+            >
+              ¥{Math.round(price).toLocaleString()}
+            </text>
+          )
+        })}
+      </g>
+      
+      {/* X軸ラベル */}
+      <g>
+        {data.map((item, index) => {
+          if (index % Math.ceil(data.length / 10) === 0) {
+            const x = margin.left + index * candleSpacing + candleSpacing / 2
+            return (
+              <text
+                key={index}
+                x={x}
+                y={margin.top + chartHeight + 15}
+                textAnchor="middle"
+                fontSize="12"
+                fill="#6b7280"
+              >
+                {item.date}
+              </text>
+            )
+          }
+          return null
+        })}
+      </g>
+      
+      {/* ローソク足 */}
+      <g>
+        {data.map((item, index) => {
+          const { open, high, low, close } = item
+          const isPositive = close >= open
+          const color = isPositive ? '#22c55e' : '#ef4444'
+          
+          const x = margin.left + index * candleSpacing + candleSpacing / 2
+          
+          // Y座標の計算
+          const highY = margin.top + ((yMax - high) / yRange) * chartHeight
+          const lowY = margin.top + ((yMax - low) / yRange) * chartHeight
+          const openY = margin.top + ((yMax - open) / yRange) * chartHeight
+          const closeY = margin.top + ((yMax - close) / yRange) * chartHeight
+          
+          const bodyTop = Math.min(openY, closeY)
+          const bodyHeight = Math.abs(closeY - openY) || 2
+          const wickX = x
+          const bodyX = x - candleWidth / 2
+          
+          return (
+            <g key={index}>
+              {/* 上ヒゲ */}
+              <line
+                x1={wickX}
+                y1={highY}
+                x2={wickX}
+                y2={bodyTop}
+                stroke={color}
+                strokeWidth={1}
+              />
+              
+              {/* 下ヒゲ */}
+              <line
+                x1={wickX}
+                y1={bodyTop + bodyHeight}
+                x2={wickX}
+                y2={lowY}
+                stroke={color}
+                strokeWidth={1}
+              />
+              
+              {/* ローソク足の実体 */}
+              <rect
+                x={bodyX}
+                y={bodyTop}
+                width={candleWidth}
+                height={bodyHeight}
+                fill={isPositive ? color : color}
+                stroke={color}
+                strokeWidth={1}
+                opacity={isPositive ? 0.8 : 1}
+              />
+              
+              {/* 始値・終値の線（十字線） */}
+              {bodyHeight < 3 && (
+                <line
+                  x1={bodyX}
+                  y1={openY}
+                  x2={bodyX + candleWidth}
+                  y2={openY}
+                  stroke={color}
+                  strokeWidth={2}
+                />
+              )}
+            </g>
+          )
+        })}
+      </g>
+    </svg>
   )
 }
 
@@ -188,7 +331,7 @@ function App() {
 
     const interval = setInterval(() => {
       goToNext()
-    }, 3000) // 3秒間隔に変更（チャートが複雑になったため）
+    }, 3000) // 3秒間隔
 
     return () => clearInterval(interval)
   }, [isPlaying, stocksData.length])
@@ -370,6 +513,14 @@ function App() {
           
           {/* 株価チャート */}
           <div style={{ height: '400px', marginBottom: '20px' }}>
+            <CandlestickChart data={chartData} width={1340} height={400} />
+          </div>
+          
+          {/* 出来高チャート */}
+          <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+            📊 出来高
+          </h4>
+          <div style={{ height: '150px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -379,10 +530,8 @@ function App() {
                   interval="preserveStartEnd"
                 />
                 <YAxis 
-                  yAxisId="price"
                   tick={{ fontSize: 12 }}
-                  domain={[0, 'dataMax + 100']}
-                  tickFormatter={(value) => `¥${value.toLocaleString()}`}
+                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
                 />
                 <Tooltip 
                   content={({ active, payload, label }) => {
@@ -396,104 +545,14 @@ function App() {
                           padding: '10px'
                         }}>
                           <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
-                          <p style={{ margin: '2px 0', fontSize: '12px' }}>始値: ¥{data.open?.toLocaleString()}</p>
-                          <p style={{ margin: '2px 0', fontSize: '12px' }}>高値: ¥{data.high?.toLocaleString()}</p>
-                          <p style={{ margin: '2px 0', fontSize: '12px' }}>安値: ¥{data.low?.toLocaleString()}</p>
-                          <p style={{ margin: '2px 0', fontSize: '12px' }}>終値: ¥{data.close?.toLocaleString()}</p>
+                          <p style={{ margin: '2px 0', fontSize: '12px' }}>出来高: {data.volume?.toLocaleString()}株</p>
                         </div>
                       );
                     }
                     return null;
                   }}
                 />
-                {/* ローソク足表示（カスタムバーとして実装） */}
-                <Bar 
-                  yAxisId="price"
-                  dataKey="close"
-                  shape={(props) => {
-                    const { payload, x, y, width, height } = props;
-                    if (!payload) return null;
-                    
-                    const { open, high, low, close } = payload;
-                    const isPositive = close >= open;
-                    const color = isPositive ? '#22c55e' : '#ef4444';
-                    
-                    // Y軸のスケール計算
-                    const yScale = height / (high - low || 1);
-                    const candleWidth = width * 0.6;
-                    const candleX = x + (width - candleWidth) / 2;
-                    
-                    // 高値から低値までの範囲でのY座標計算
-                    const highY = y;
-                    const lowY = y + height;
-                    const openY = highY + (high - open) * yScale;
-                    const closeY = highY + (high - close) * yScale;
-                    
-                    const bodyTop = Math.min(openY, closeY);
-                    const bodyHeight = Math.abs(closeY - openY) || 1;
-                    
-                    return (
-                      <g>
-                        {/* 上ヒゲ */}
-                        <line
-                          x1={x + width / 2}
-                          y1={highY}
-                          x2={x + width / 2}
-                          y2={bodyTop}
-                          stroke={color}
-                          strokeWidth={1}
-                        />
-                        {/* 実体 */}
-                        <rect
-                          x={candleX}
-                          y={bodyTop}
-                          width={candleWidth}
-                          height={bodyHeight}
-                          fill={isPositive ? color : color}
-                          stroke={color}
-                          strokeWidth={1}
-                        />
-                        {/* 下ヒゲ */}
-                        <line
-                          x1={x + width / 2}
-                          y1={bodyTop + bodyHeight}
-                          x2={x + width / 2}
-                          y2={lowY}
-                          stroke={color}
-                          strokeWidth={1}
-                        />
-                      </g>
-                    );
-                  }}
-                  fill="transparent"
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* 出来高チャート */}
-          <div style={{ height: '150px' }}>
-            <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
-              📊 出来高
-            </h4>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
-                  tick={{ fontSize: 10 }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis 
-                  tick={{ fontSize: 10 }}
-                  domain={[0, 'dataMax + 50000']}
-                  tickFormatter={(value) => `${Math.round(value / 1000)}K`}
-                />
-                <Tooltip 
-                  formatter={(value) => [`${value.toLocaleString()}株`, '出来高']}
-                  labelFormatter={(label) => `日付: ${label}`}
-                />
-                <Bar dataKey="volume" fill="#94a3b8" />
+                <Bar dataKey="volume" fill="#8884d8" />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
