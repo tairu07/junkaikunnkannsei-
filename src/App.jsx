@@ -365,7 +365,7 @@ function App() {
           marginBottom: '30px'
         }}>
           <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px' }}>
-            📈 株価チャート ({PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label} - {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label})
+            🕯️ ローソク足チャート ({PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label} - {TIMEFRAME_OPTIONS.find(t => t.value === selectedTimeframe)?.label})
           </h3>
           
           {/* 株価チャート */}
@@ -384,25 +384,87 @@ function App() {
                   domain={['dataMin - 50', 'dataMax + 50']}
                 />
                 <Tooltip 
-                  formatter={(value, name) => {
-                    if (name === 'priceForLine') return [`¥${value.toLocaleString()}`, '終値']
-                    return [`¥${value.toLocaleString()}`, name]
-                  }}
-                  labelFormatter={(label) => `日付: ${label}`}
-                  contentStyle={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    border: '1px solid #ccc',
-                    borderRadius: '5px'
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div style={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: '1px solid #ccc',
+                          borderRadius: '5px',
+                          padding: '10px'
+                        }}>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
+                          <p style={{ margin: '2px 0', fontSize: '12px' }}>始値: ¥{data.open?.toLocaleString()}</p>
+                          <p style={{ margin: '2px 0', fontSize: '12px' }}>高値: ¥{data.high?.toLocaleString()}</p>
+                          <p style={{ margin: '2px 0', fontSize: '12px' }}>安値: ¥{data.low?.toLocaleString()}</p>
+                          <p style={{ margin: '2px 0', fontSize: '12px' }}>終値: ¥{data.close?.toLocaleString()}</p>
+                        </div>
+                      );
+                    }
+                    return null;
                   }}
                 />
-                <Line 
+                {/* ローソク足表示（カスタムバーとして実装） */}
+                <Bar 
                   yAxisId="price"
-                  type="monotone" 
-                  dataKey="priceForLine" 
-                  stroke="#2563eb" 
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
+                  dataKey="close"
+                  shape={(props) => {
+                    const { payload, x, y, width, height } = props;
+                    if (!payload) return null;
+                    
+                    const { open, high, low, close } = payload;
+                    const isPositive = close >= open;
+                    const color = isPositive ? '#22c55e' : '#ef4444';
+                    
+                    // Y軸のスケール計算
+                    const yScale = height / (high - low || 1);
+                    const candleWidth = width * 0.6;
+                    const candleX = x + (width - candleWidth) / 2;
+                    
+                    // 高値から低値までの範囲でのY座標計算
+                    const highY = y;
+                    const lowY = y + height;
+                    const openY = highY + (high - open) * yScale;
+                    const closeY = highY + (high - close) * yScale;
+                    
+                    const bodyTop = Math.min(openY, closeY);
+                    const bodyHeight = Math.abs(closeY - openY) || 1;
+                    
+                    return (
+                      <g>
+                        {/* 上ヒゲ */}
+                        <line
+                          x1={x + width / 2}
+                          y1={highY}
+                          x2={x + width / 2}
+                          y2={bodyTop}
+                          stroke={color}
+                          strokeWidth={1}
+                        />
+                        {/* 実体 */}
+                        <rect
+                          x={candleX}
+                          y={bodyTop}
+                          width={candleWidth}
+                          height={bodyHeight}
+                          fill={isPositive ? color : color}
+                          stroke={color}
+                          strokeWidth={1}
+                        />
+                        {/* 下ヒゲ */}
+                        <line
+                          x1={x + width / 2}
+                          y1={bodyTop + bodyHeight}
+                          x2={x + width / 2}
+                          y2={lowY}
+                          stroke={color}
+                          strokeWidth={1}
+                        />
+                      </g>
+                    );
+                  }}
+                  fill="transparent"
                 />
               </ComposedChart>
             </ResponsiveContainer>
