@@ -61,6 +61,29 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
   const candleWidth = Math.max(chartWidth / data.length * 0.7, 3)
   const candleSpacing = chartWidth / data.length
   
+  // パスデータを生成するヘルパー関数
+  const generatePath = (values) => {
+    let path = ''
+    let started = false
+    
+    for (let index = 0; index < data.length; index++) {
+      const value = values[index]
+      if (value !== null && value !== undefined && !isNaN(value)) {
+        const x = margin.left + index * candleSpacing + candleSpacing / 2
+        const y = margin.top + ((yMax - value) / yRange) * chartHeight
+        
+        if (!started) {
+          path += `M ${x} ${y}`
+          started = true
+        } else {
+          path += ` L ${x} ${y}`
+        }
+      }
+    }
+    
+    return path
+  }
+  
   return (
     <svg width={width} height={height}>
       {/* 背景 */}
@@ -109,13 +132,7 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
         <g>
           {/* 上部バンド */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.bollingerBands.upper[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.bollingerBands.upper)}
             stroke="#9ca3af"
             strokeWidth={1}
             fill="none"
@@ -124,13 +141,7 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
           
           {/* 下部バンド */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.bollingerBands.lower[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.bollingerBands.lower)}
             stroke="#9ca3af"
             strokeWidth={1}
             fill="none"
@@ -139,32 +150,20 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
           
           {/* 中央線（移動平均線） */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.bollingerBands.middle[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.bollingerBands.middle)}
             stroke="#6b7280"
-            strokeWidth={1}
+            strokeWidth={2}
             fill="none"
           />
         </g>
       )}
       
       {/* 移動平均線 */}
-      {showIndicators.movingAverages && (
+      {showIndicators.movingAverages && indicators.sma5 && indicators.sma25 && indicators.sma75 && (
         <g>
           {/* 短期移動平均線 (5日) */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.sma5[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.sma5)}
             stroke="#f59e0b"
             strokeWidth={2}
             fill="none"
@@ -172,13 +171,7 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
           
           {/* 中期移動平均線 (25日) */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.sma25[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.sma25)}
             stroke="#3b82f6"
             strokeWidth={2}
             fill="none"
@@ -186,13 +179,7 @@ const CandlestickChart = ({ data, indicators, width, height, showIndicators }) =
           
           {/* 長期移動平均線 (75日) */}
           <path
-            d={data.map((_, index) => {
-              const x = margin.left + index * candleSpacing + candleSpacing / 2
-              const value = indicators.sma75[index]
-              if (value === null) return ''
-              const y = margin.top + ((yMax - value) / yRange) * chartHeight
-              return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-            }).join(' ')}
+            d={generatePath(indicators.sma75)}
             stroke="#8b5cf6"
             strokeWidth={2}
             fill="none"
@@ -327,6 +314,27 @@ function App() {
     rsi: false,
     macd: false
   })
+  
+  // テクニカル指標のパラメータ設定
+  const [indicatorParams, setIndicatorParams] = useState({
+    sma: {
+      short: 5,
+      medium: 25,
+      long: 75
+    },
+    bollinger: {
+      period: 20,
+      stdDev: 2
+    },
+    rsi: {
+      period: 14
+    },
+    macd: {
+      fast: 12,
+      slow: 26,
+      signal: 9
+    }
+  })
 
   // 株価データを生成
   const generateStockData = (stock) => {
@@ -417,7 +425,7 @@ function App() {
   // 現在の銘柄
   const currentStock = stocksData[currentIndex]
   const chartData = currentStock ? generateAdvancedChartData(currentStock.basePrice, selectedPeriod, selectedTimeframe) : []
-  const indicators = chartData.length > 0 ? calculateAllIndicators(chartData) : {}
+  const indicators = chartData.length > 0 ? calculateAllIndicators(chartData, indicatorParams) : {}
 
   // RSIとMACDのチャートデータを準備
   const rsiData = chartData.map((item, index) => ({
@@ -445,6 +453,17 @@ function App() {
   // 再生/停止
   const togglePlayback = () => {
     setIsPlaying(!isPlaying)
+  }
+
+  // パラメータ更新関数
+  const updateIndicatorParam = (indicator, param, value) => {
+    setIndicatorParams(prev => ({
+      ...prev,
+      [indicator]: {
+        ...prev[indicator],
+        [param]: parseInt(value)
+      }
+    }))
   }
 
   // 自動ローテーション
@@ -501,10 +520,10 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v3.0 Pro
+            日本株チャート巡回ツール v3.1 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            TSE主要銘柄対応 - プロレベル株価チャート分析 + テクニカル指標
+            TSE主要銘柄対応 - プロレベル株価チャート分析 + カスタマイズ可能テクニカル指標
           </p>
           <div style={{ marginTop: '10px' }}>
             <span style={{ 
@@ -634,9 +653,11 @@ function App() {
               marginBottom: '20px'
             }}>
               <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px' }}>
-                📈 テクニカル指標
+                📈 テクニカル指標 & パラメータ設定
               </h4>
-              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              
+              {/* 指標の表示/非表示切り替え */}
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -644,7 +665,7 @@ function App() {
                     onChange={(e) => setShowIndicators(prev => ({ ...prev, movingAverages: e.target.checked }))}
                     style={{ marginRight: '8px' }}
                   />
-                  <span style={{ fontSize: '14px' }}>移動平均線 (5,25,75日)</span>
+                  <span style={{ fontSize: '14px' }}>移動平均線</span>
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input
@@ -674,21 +695,166 @@ function App() {
                   <span style={{ fontSize: '14px' }}>MACD</span>
                 </label>
               </div>
+
+              {/* パラメータ設定 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                {/* 移動平均線設定 */}
+                {showIndicators.movingAverages && (
+                  <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <h5 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px', color: '#374151' }}>
+                      移動平均線期間
+                    </h5>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>短期:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.sma.short}
+                          onChange={(e) => updateIndicatorParam('sma', 'short', e.target.value)}
+                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="1"
+                          max="100"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>中期:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.sma.medium}
+                          onChange={(e) => updateIndicatorParam('sma', 'medium', e.target.value)}
+                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="1"
+                          max="200"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>長期:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.sma.long}
+                          onChange={(e) => updateIndicatorParam('sma', 'long', e.target.value)}
+                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="1"
+                          max="300"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ボリンジャーバンド設定 */}
+                {showIndicators.bollingerBands && (
+                  <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <h5 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px', color: '#374151' }}>
+                      ボリンジャーバンド
+                    </h5>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>期間:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.bollinger.period}
+                          onChange={(e) => updateIndicatorParam('bollinger', 'period', e.target.value)}
+                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="5"
+                          max="100"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>σ:</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={indicatorParams.bollinger.stdDev}
+                          onChange={(e) => updateIndicatorParam('bollinger', 'stdDev', e.target.value)}
+                          style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="0.5"
+                          max="5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* RSI設定 */}
+                {showIndicators.rsi && (
+                  <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <h5 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px', color: '#374151' }}>
+                      RSI設定
+                    </h5>
+                    <div>
+                      <label style={{ fontSize: '12px', color: '#6b7280' }}>期間:</label>
+                      <input
+                        type="number"
+                        value={indicatorParams.rsi.period}
+                        onChange={(e) => updateIndicatorParam('rsi', 'period', e.target.value)}
+                        style={{ width: '50px', padding: '2px 5px', marginLeft: '5px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                        min="5"
+                        max="50"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* MACD設定 */}
+                {showIndicators.macd && (
+                  <div style={{ padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <h5 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px', color: '#374151' }}>
+                      MACD設定
+                    </h5>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>短期:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.macd.fast}
+                          onChange={(e) => updateIndicatorParam('macd', 'fast', e.target.value)}
+                          style={{ width: '40px', padding: '2px 5px', marginLeft: '3px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="5"
+                          max="50"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>長期:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.macd.slow}
+                          onChange={(e) => updateIndicatorParam('macd', 'slow', e.target.value)}
+                          style={{ width: '40px', padding: '2px 5px', marginLeft: '3px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="10"
+                          max="100"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: '#6b7280' }}>Signal:</label>
+                        <input
+                          type="number"
+                          value={indicatorParams.macd.signal}
+                          onChange={(e) => updateIndicatorParam('macd', 'signal', e.target.value)}
+                          style={{ width: '40px', padding: '2px 5px', marginLeft: '3px', border: '1px solid #d1d5db', borderRadius: '3px' }}
+                          min="3"
+                          max="30"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               
               {/* 凡例 */}
               {showIndicators.movingAverages && (
                 <div style={{ marginTop: '15px', display: 'flex', gap: '15px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <div style={{ width: '20px', height: '3px', backgroundColor: '#f59e0b', marginRight: '5px' }}></div>
-                    <span>短期 (5日)</span>
+                    <span>短期 ({indicatorParams.sma.short}日)</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <div style={{ width: '20px', height: '3px', backgroundColor: '#3b82f6', marginRight: '5px' }}></div>
-                    <span>中期 (25日)</span>
+                    <span>中期 ({indicatorParams.sma.medium}日)</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <div style={{ width: '20px', height: '3px', backgroundColor: '#8b5cf6', marginRight: '5px' }}></div>
-                    <span>長期 (75日)</span>
+                    <span>長期 ({indicatorParams.sma.long}日)</span>
                   </div>
                 </div>
               )}
@@ -762,7 +928,7 @@ function App() {
               {showIndicators.rsi && (
                 <>
                   <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
-                    📈 RSI (相対力指数)
+                    📈 RSI (相対力指数) - {indicatorParams.rsi.period}期間
                   </h4>
                   <div style={{ height: '200px', marginBottom: '30px' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -810,7 +976,7 @@ function App() {
               {showIndicators.macd && (
                 <>
                   <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
-                    📊 MACD (移動平均収束拡散法)
+                    📊 MACD ({indicatorParams.macd.fast},{indicatorParams.macd.slow},{indicatorParams.macd.signal})
                   </h4>
                   <div style={{ height: '200px' }}>
                     <ResponsiveContainer width="100%" height="100%">

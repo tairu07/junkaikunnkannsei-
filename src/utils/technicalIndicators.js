@@ -176,26 +176,44 @@ export const calculateMACD = (data, fastPeriod = 12, slowPeriod = 26, signalPeri
 /**
  * 複数の移動平均線を計算
  * @param {Array} data - 価格データ配列
+ * @param {Object} params - パラメータ {short, medium, long}
  * @returns {Object} 短期・中期・長期移動平均線
  */
-export const calculateMovingAverages = (data) => {
+export const calculateMovingAverages = (data, params = { short: 5, medium: 25, long: 75 }) => {
   return {
-    sma5: calculateSMA(data, 5),   // 短期: 5日
-    sma25: calculateSMA(data, 25), // 中期: 25日
-    sma75: calculateSMA(data, 75)  // 長期: 75日
+    sma5: calculateSMA(data, params.short),   // 短期
+    sma25: calculateSMA(data, params.medium), // 中期
+    sma75: calculateSMA(data, params.long)    // 長期
   }
 }
 
 /**
  * すべてのテクニカル指標を計算
  * @param {Array} data - 価格データ配列
+ * @param {Object} params - 各指標のパラメータ
  * @returns {Object} すべての指標データ
  */
-export const calculateAllIndicators = (data) => {
-  const movingAverages = calculateMovingAverages(data)
-  const bollingerBands = calculateBollingerBands(data)
-  const rsi = calculateRSI(data)
-  const macd = calculateMACD(data)
+export const calculateAllIndicators = (data, params = {}) => {
+  // デフォルトパラメータ
+  const defaultParams = {
+    sma: { short: 5, medium: 25, long: 75 },
+    bollinger: { period: 20, stdDev: 2 },
+    rsi: { period: 14 },
+    macd: { fast: 12, slow: 26, signal: 9 }
+  }
+  
+  // パラメータをマージ
+  const mergedParams = {
+    sma: { ...defaultParams.sma, ...params.sma },
+    bollinger: { ...defaultParams.bollinger, ...params.bollinger },
+    rsi: { ...defaultParams.rsi, ...params.rsi },
+    macd: { ...defaultParams.macd, ...params.macd }
+  }
+  
+  const movingAverages = calculateMovingAverages(data, mergedParams.sma)
+  const bollingerBands = calculateBollingerBands(data, mergedParams.bollinger.period, mergedParams.bollinger.stdDev)
+  const rsi = calculateRSI(data, mergedParams.rsi.period)
+  const macd = calculateMACD(data, mergedParams.macd.fast, mergedParams.macd.slow, mergedParams.macd.signal)
   
   return {
     ...movingAverages,
