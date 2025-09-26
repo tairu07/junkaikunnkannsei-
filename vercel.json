@@ -2,13 +2,13 @@
   "version": 2,
   "functions": {
     "api/stocks.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "@vercel/node@3.0.0"
     },
     "api/favorites.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "@vercel/node@3.0.0"
     },
     "api/chart-settings.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "@vercel/node@3.0.0"
     }
   },
   "routes": [
