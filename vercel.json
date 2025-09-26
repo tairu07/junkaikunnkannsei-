@@ -1,16 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "api/stocks.js": {
-      "runtime": "@vercel/node@3.1.0"
-    },
-    "api/favorites.js": {
-      "runtime": "@vercel/node@3.1.0"
-    },
-    "api/chart-settings.js": {
-      "runtime": "@vercel/node@3.1.0"
-    }
-  },
   "routes": [
     {
       "src": "/api/(.*)",
