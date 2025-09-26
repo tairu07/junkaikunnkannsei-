@@ -328,7 +328,7 @@ function App() {
               <TrendingUp className="h-8 w-8 text-blue-600" />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">
-                  日本株チャート v5.0 Pro
+                  日本株チャート巡回ツール v5.0 Pro
                 </h1>
                 <div className="flex items-center space-x-2 text-xs text-gray-500">
                   <span>全{allStocks.length}銘柄対応</span>
