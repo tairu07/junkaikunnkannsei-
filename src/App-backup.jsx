@@ -908,7 +908,7 @@ function App() {
             color: '#111827', 
             marginBottom: '10px' 
           }}>
-            日本株チャート巡回ツール v4.0 Pro
+            日本株チャート巡回ツール v5.0 Pro
           </h1>
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
             TSE主要銘柄対応 - プロレベル株価チャート分析 + 長期移動平均線完全対応 + お気に入り機能

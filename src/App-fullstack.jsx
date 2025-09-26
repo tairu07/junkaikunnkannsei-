@@ -613,7 +613,7 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-800">
-                日本株チャート<span className="text-blue-600">巡回ツール</span> v4.0 Pro
+                日本株チャート<span className="text-blue-600">巡回ツール</span> v5.0 Pro
               </h1>
               <p className="text-gray-600 mt-1">
                 TSE主要銘柄対応 • プロレベル株価チャート分析 • 長期移動平均線完全対応 • お気に入り機能
